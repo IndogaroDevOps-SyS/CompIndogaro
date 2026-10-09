@@ -27,18 +27,19 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Download Static FFmpeg ARM64
+      - name: Download Static FFmpeg ARM64 as Native Library
         run: |
-          mkdir -p app/src/main/assets/bin
+          mkdir -p app/src/main/jniLibs/arm64-v8a
           curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz -o ffmpeg.tar.xz
-          tar -xf ffmpeg.tar.xz --strip-components=1 -C app/src/main/assets/bin/
-          chmod +x app/src/main/assets/bin/ffmpeg
-          rm -f ffmpeg.tar.xz
+          tar -xf ffmpeg.tar.xz --strip-components=1
+          cp ffmpeg app/src/main/jniLibs/arm64-v8a/libffmpeg.so
+          chmod +x app/src/main/jniLibs/arm64-v8a/libffmpeg.so
+          rm -rf ffmpeg*
 
-      - name: Build Go Binary for Android ARM64
+      - name: Build Go Binary as Native Library
         run: |
           cd go_engine
-          CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -ldflags="-s -w" -o ../app/src/main/assets/bin/pangkas systemPangkas.go
+          CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -ldflags="-s -w" -o ../app/src/main/jniLibs/arm64-v8a/libpangkas.so systemPangkas.go
 
       - name: Setup Gradle
         run: gradle wrapper

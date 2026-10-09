@@ -47,26 +47,26 @@ class PangkasService : Service() {
 
     private fun executeEngine(mode: String) {
         try {
-            broadcastLog("[NATIVE] Extracting binaries to executable directory (codeCacheDir)...")
-            
-            // Gunakan codeCacheDir agar lolos dari aturan SELinux noexec
-            val binDir = File(codeCacheDir, "bin")
-            if (!binDir.exists()) binDir.mkdirs()
+            // Panggil binary langsung dari nativeLibraryDir Android OS (/data/app/.../lib/arm64)
+            val nativeDir = applicationInfo.nativeLibraryDir
+            val pangkasBin = File(nativeDir, "libpangkas.so")
 
-            val pangkasBin = File(binDir, "pangkas")
-            val ffmpegBin = File(binDir, "ffmpeg")
+            if (!pangkasBin.exists()) {
+                broadcastLog("[CRITICAL ERROR] Binary libpangkas.so not found in $nativeDir")
+                return
+            }
 
-            copyAssetToFile("bin/pangkas", pangkasBin)
-            copyAssetToFile("bin/ffmpeg", ffmpegBin)
-
-            // Force Permission 755 via POSIX Runtime Call
-            Runtime.getRuntime().exec("chmod 755 ${pangkasBin.absolutePath}").waitFor()
-            Runtime.getRuntime().exec("chmod 755 ${ffmpegBin.absolutePath}").waitFor()
-
-            broadcastLog("[NATIVE] Binary execution permission granted (755). Executing ProcessBuilder...")
+            broadcastLog("[NATIVE] Found executable binary in nativeLibraryDir: ${pangkasBin.absolutePath}")
+            broadcastLog("[NATIVE] Launching ProcessBuilder via Native Executable Path...")
             
             val pb = ProcessBuilder(pangkasBin.absolutePath, "-mode", mode)
-            pb.directory(codeCacheDir)
+            pb.directory(filesDir)
+            
+            // Masukkan nativeLibraryDir ke PATH lingkungan eksekusi agar pangkas bisa memanggil libffmpeg.so
+            val env = pb.environment()
+            env["PATH"] = "$nativeDir:" + (env["PATH"] ?: "")
+            env["LD_LIBRARY_PATH"] = "$nativeDir:" + (env["LD_LIBRARY_PATH"] ?: "")
+
             pb.redirectErrorStream(true)
 
             val process = pb.start()
@@ -86,14 +86,6 @@ class PangkasService : Service() {
 
         } catch (e: Exception) {
             broadcastLog("[CRITICAL ERROR] ${e.localizedMessage}")
-        }
-    }
-
-    private fun copyAssetToFile(assetPath: String, outFile: File) {
-        assets.open(assetPath).use { input ->
-            outFile.outputStream().use { output ->
-                input.copyTo(output)
-            }
         }
     }
 
