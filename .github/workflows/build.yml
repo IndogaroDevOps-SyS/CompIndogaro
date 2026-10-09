@@ -30,8 +30,8 @@ jobs:
       - name: Download Static FFmpeg ARM64
         run: |
           mkdir -p app/src/main/assets/bin
-          curl -L -s https://github.com/eugenewg/ffmpeg-builds/releases/download/v6.0/ffmpeg-6.0-linux-arm64.tar.xz -o ffmpeg.tar.xz
-          tar -xf ffmpeg.tar.xz --strip-components=1 */ffmpeg -C app/src/main/assets/bin/ || tar -xf ffmpeg.tar.xz -C app/src/main/assets/bin/
+          curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz -o ffmpeg.tar.xz
+          tar -xf ffmpeg.tar.xz --strip-components=1 -C app/src/main/assets/bin/
           chmod +x app/src/main/assets/bin/ffmpeg
           rm -f ffmpeg.tar.xz
 
