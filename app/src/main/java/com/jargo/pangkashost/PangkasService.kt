@@ -22,7 +22,7 @@ class PangkasService : Service() {
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PangkasHost::DaemonLock")
         wakeLock?.acquire(10 * 60 * 1000L)
         
-        broadcastLog("[SERVICE] Foreground Service & WakeLock Initialized.")
+        broadcastLog("[INIT] Memulai daemon system...")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -30,7 +30,7 @@ class PangkasService : Service() {
         createNotificationChannel()
 
         val notification: Notification = NotificationCompat.Builder(this, "PangkasDaemonChannel")
-            .setContentTitle("Pangkas Host Engine Running")
+            .setContentTitle("Pangkas Host Engine Active")
             .setContentText("Daemon aktif dalam mode: $mode")
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setOngoing(true)
@@ -47,45 +47,68 @@ class PangkasService : Service() {
 
     private fun executeEngine(mode: String) {
         try {
-            // Panggil binary langsung dari nativeLibraryDir Android OS (/data/app/.../lib/arm64)
-            val nativeDir = applicationInfo.nativeLibraryDir
-            val pangkasBin = File(nativeDir, "libpangkas.so")
+            broadcastLog("[INIT] Mengekstrak aset & binary secara dinamis...")
 
-            if (!pangkasBin.exists()) {
-                broadcastLog("[CRITICAL ERROR] Binary libpangkas.so not found in $nativeDir")
-                return
-            }
+            // Persis seperti IndDev Daemon: /data/data/<package>/files/home
+            val homeDir = File(filesDir, "home")
+            if (!homeDir.exists()) homeDir.mkdirs()
 
-            broadcastLog("[NATIVE] Found executable binary in nativeLibraryDir: ${pangkasBin.absolutePath}")
-            broadcastLog("[NATIVE] Launching ProcessBuilder via Native Executable Path...")
-            
+            val pangkasBin = File(homeDir, "Golangbin")
+            val ffmpegBin = File(homeDir, "ffmpeg")
+
+            // Ekstrak binary
+            copyAssetToFile("bin/pangkas", pangkasBin)
+            copyAssetToFile("bin/ffmpeg", ffmpegBin)
+
+            broadcastLog("[INIT] Binary path: ${pangkasBin.absolutePath}")
+
+            // Set Permission 755
+            pangkasBin.setExecutable(true, false)
+            ffmpegBin.setExecutable(true, false)
+
+            val chmodPangkas = Runtime.getRuntime().exec(arrayOf("chmod", "755", pangkasBin.absolutePath))
+            chmodPangkas.waitFor()
+
+            val chmodFFmpeg = Runtime.getRuntime().exec(arrayOf("chmod", "755", ffmpegBin.absolutePath))
+            chmodFFmpeg.waitFor()
+
+            broadcastLog("[INIT] Menjalankan Golangbin secara native...")
+
             val pb = ProcessBuilder(pangkasBin.absolutePath, "-mode", mode)
-            pb.directory(filesDir)
-            
-            // Masukkan nativeLibraryDir ke PATH lingkungan eksekusi agar pangkas bisa memanggil libffmpeg.so
+            pb.directory(homeDir)
+
             val env = pb.environment()
-            env["PATH"] = "$nativeDir:" + (env["PATH"] ?: "")
-            env["LD_LIBRARY_PATH"] = "$nativeDir:" + (env["LD_LIBRARY_PATH"] ?: "")
+            env["PATH"] = "${homeDir.absolutePath}:" + (env["PATH"] ?: "")
+            env["HOME"] = homeDir.absolutePath
 
             pb.redirectErrorStream(true)
 
             val process = pb.start()
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            broadcastLog("[SUCCESS] Golangbin daemon aktif & terhubung!")
 
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
             var line: String?
             while (reader.readLine().also { line = it } != null) {
-                line?.let { broadcastLog("[ENGINE] $it") }
+                line?.let { broadcastLog("[GO-DAEMON] $it") }
             }
 
             val exitCode = process.waitFor()
             if (exitCode == 0) {
-                broadcastLog("[SUCCESS] Engine process finished successfully.")
+                broadcastLog("[SUCCESS] Proses daemon selesai dengan sukses.")
             } else {
-                broadcastLog("[ERROR] Engine exited with code: $exitCode")
+                broadcastLog("[ERROR] Daemon keluar dengan exit code: $exitCode")
             }
 
         } catch (e: Exception) {
             broadcastLog("[CRITICAL ERROR] ${e.localizedMessage}")
+        }
+    }
+
+    private fun copyAssetToFile(assetPath: String, outFile: File) {
+        assets.open(assetPath).use { input ->
+            outFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
         }
     }
 
