@@ -7,6 +7,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -57,7 +58,7 @@ fun WorkerGauge(
         Spacer(modifier = Modifier.height(4.dp))
 
         Box(
-            modifier = Modifier.size(150.dp),
+            modifier = Modifier.size(140.dp),
             contentAlignment = Alignment.Center
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -70,7 +71,6 @@ fun WorkerGauge(
                 val startAngle = 140f
                 val totalSweepAngle = 260f
 
-                // Track Background
                 drawArc(
                     color = Color(0xFF1E2230),
                     startAngle = startAngle,
@@ -81,7 +81,6 @@ fun WorkerGauge(
                     size = Size(radius * 2, radius * 2)
                 )
 
-                // Ticks
                 val totalTicks = 20
                 for (i in 0..totalTicks) {
                     val tickAngle = startAngle + (i.toFloat() / totalTicks) * totalSweepAngle
@@ -108,7 +107,6 @@ fun WorkerGauge(
                     )
                 }
 
-                // Active Gradient Arc
                 val activeGradient = Brush.sweepGradient(
                     0.0f to Color(0xFF00F2FE),
                     0.7f to Color(0xFF4FACFE),
@@ -133,7 +131,7 @@ fun WorkerGauge(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = "$speedValue",
-                    fontSize = 28.sp,
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color.White,
                     fontFamily = FontFamily.Monospace
@@ -149,10 +147,9 @@ fun WorkerGauge(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Active File Indicator Box
         Box(
             modifier = Modifier
-                .width(150.dp)
+                .width(140.dp)
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color(0xFF141824))
                 .padding(horizontal = 8.dp, vertical = 4.dp),

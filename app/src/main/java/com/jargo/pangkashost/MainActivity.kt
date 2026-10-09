@@ -1,6 +1,9 @@
 package com.jargo.pangkashost
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -35,8 +38,32 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
+    private val logList = mutableStateListOf(
+        "[SYSTEM] Daemon Host Engine Initialized.",
+        "[SYSTEM] Target SDK: 29 (Full Storage Bypass Active).",
+        "[NATIVE] Broadcast Receiver Active."
+    )
+
+    private val logReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val msg = intent?.getStringExtra("LOG_MESSAGE") ?: return
+            if (logList.sumOf { it.length } > 128000) {
+                logList.removeAt(0)
+            }
+            logList.add(msg)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val filter = IntentFilter("com.jargo.pangkashost.LOG_EVENT")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(logReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(logReceiver, filter)
+        }
+
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(
@@ -44,6 +71,7 @@ class MainActivity : ComponentActivity() {
                     color = Color(0xFF0A0C10)
                 ) {
                     DashboardScreen(
+                        logs = logList,
                         onStartService = { mode ->
                             if (checkStoragePermission()) {
                                 val intent = Intent(this, PangkasService::class.java).apply {
@@ -62,6 +90,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(logReceiver)
     }
 
     private fun checkStoragePermission(): Boolean {
@@ -89,28 +122,17 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(onStartService: (String) -> Unit) {
+fun DashboardScreen(logs: List<String>, onStartService: (String) -> Unit) {
     var selectedMode by remember { mutableStateOf("pangkas") }
     var isRunning by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showLogBottomSheet by remember { mutableStateOf(false) }
-    
-    val logs = remember { mutableStateListOf(
-        "[SYSTEM] Daemon Host Engine Initialized.",
-        "[SYSTEM] Target SDK: 29 (Full Storage Bypass Active).",
-        "[NATIVE] Go Binary 'pangkas' ready in assets.",
-        "[NATIVE] FFmpeg ARM64 static linked."
-    ) }
 
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    fun appendLog(msg: String) {
-        if (logs.sumOf { it.length } > 128000) {
-            logs.removeAt(0)
-        }
-        logs.add(msg)
-        coroutineScope.launch {
+    LaunchedEffect(logs.size) {
+        if (logs.isNotEmpty()) {
             listState.animateScrollToItem(logs.size - 1)
         }
     }
@@ -146,10 +168,7 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
                         DropdownMenuItem(
                             text = { Text("Pengaturan Engine", color = Color.White) },
                             leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF64FFDA)) },
-                            onClick = {
-                                showMenu = false
-                                appendLog("[CONFIG] Menu Pengaturan dibuka.")
-                            }
+                            onClick = { showMenu = false }
                         )
                     }
                 },
@@ -166,7 +185,6 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Dual Speedometer Gauge Container (Worker 1 & Worker 2)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -233,9 +251,7 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
                     Text("Pindai folder tersembunyi & kalkulasi hash video duplikat via Go Engine.", fontSize = 12.sp, color = Color(0xFF888A99))
                     
                     Button(
-                        onClick = {
-                            appendLog("[DEEP SCAN] Memulai pemindaian folder tersembunyi & duplikat...")
-                        },
+                        onClick = { },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B0FF)),
                         shape = RoundedCornerShape(10.dp)
                     ) {
@@ -244,16 +260,13 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Button(
                 onClick = {
                     isRunning = !isRunning
                     if (isRunning) {
-                        appendLog("[SERVICE] Foreground Service & WakeLock Started. Mode: $selectedMode")
                         onStartService(selectedMode)
-                    } else {
-                        appendLog("[SERVICE] Foreground Service Stopped.")
                     }
                 },
                 modifier = Modifier
@@ -275,7 +288,6 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // System Log Overlay Bottom Sheet
         if (showLogBottomSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showLogBottomSheet = false },
@@ -287,7 +299,7 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
                         .padding(16.dp)
                 ) {
                     Text(
-                        "SYSTEM TERMINAL LOGS (64KB - 128KB)",
+                        "SYSTEM TERMINAL LOGS (REALTIME STREAM)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                         color = Color(0xFF64FFDA),
@@ -297,7 +309,7 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(300.dp)
+                            .height(320.dp)
                             .border(1.dp, Color(0xFF262C40), RoundedCornerShape(12.dp)),
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF050608))
@@ -314,7 +326,11 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
                                     text = log,
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 11.sp,
-                                    color = if (log.contains("ERROR")) Color(0xFFFF5252) else Color(0xFF64FFDA)
+                                    color = when {
+                                        log.contains("ERROR") || log.contains("CRITICAL") -> Color(0xFFFF5252)
+                                        log.contains("SUCCESS") -> Color(0xFF00E676)
+                                        else -> Color(0xFF64FFDA)
+                                    }
                                 )
                             }
                         }
