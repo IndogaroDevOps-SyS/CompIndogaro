@@ -16,6 +16,16 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters.add("arm64-v8a")
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("src/main/jniLibs")
+        }
     }
 
     buildTypes {
@@ -37,16 +47,6 @@ android {
     buildFeatures {
         compose = true
     }
-}
-
-// Sync Biner dari root folder /bin ke Android Assets
-tasks.register<Copy>("syncDaemonAssets") {
-    from("${project.rootDir}/bin")
-    into("${project.projectDir}/src/main/assets/bin")
-}
-
-project.afterEvaluate {
-    tasks.findByName("preBuild")?.dependsOn("syncDaemonAssets")
 }
 
 dependencies {
