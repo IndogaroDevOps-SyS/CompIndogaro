@@ -1,0 +1,52 @@
+name: Build Pangkas Host APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Download Static FFmpeg ARM64
+        run: |
+          mkdir -p app/src/main/assets/bin
+          curl -L -o ffmpeg.tar.xz https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffmpeg-4.4.1-linux-arm64.tar.xz
+          tar -xf ffmpeg.tar.xz -C app/src/main/assets/bin/
+          chmod +x app/src/main/assets/bin/ffmpeg || true
+
+      - name: Build Go Binary for Android ARM64
+        run: |
+          cd go_engine
+          CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -ldflags="-s -w" -o ../app/src/main/assets/bin/pangkas systemPangkas.go
+
+      - name: Setup Gradle
+        run: gradle wrapper
+
+      - name: Build APK Release
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PangkasHost-Release
+          path: app/build/outputs/apk/release/*.apk
