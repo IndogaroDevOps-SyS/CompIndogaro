@@ -36,7 +36,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.util.regex.Pattern
@@ -89,13 +88,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate()
 
         val filter = IntentFilter("com.jargo.pangkashost.LOG_EVENT")
-        // Menggunakan ContextCompat agar kompatibel dari API lama hingga Android 13+ (Tiramisu)
-        ContextCompat.registerReceiver(
-            this,
-            logReceiver,
-            filter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(logReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(logReceiver, filter)
+        }
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
