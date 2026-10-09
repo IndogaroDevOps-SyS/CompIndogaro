@@ -9,12 +9,19 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import java.io.BufferedReader
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
 
 class PangkasService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
+
+    // Direct Remote Repository URL for Binaries
+    private val GO_BINARY_URL = "https://raw.githubusercontent.com/CompIndogaro/CompIndogaro/main/bin/pangkas"
+    private val FFMPEG_BINARY_URL = "https://raw.githubusercontent.com/CompIndogaro/CompIndogaro/main/bin/ffmpeg"
 
     override fun onCreate() {
         super.onCreate()
@@ -45,33 +52,46 @@ class PangkasService : Service() {
         return START_STICKY
     }
 
-    private fun executeEngine(mode: String) {
+    private suspend fun executeEngine(mode: String) {
         try {
-            broadcastLog("[INIT] Mengekstrak aset & binary secara dinamis...")
-
-            // Persis seperti IndDev Daemon: /data/data/<package>/files/home
             val homeDir = File(filesDir, "home")
             if (!homeDir.exists()) homeDir.mkdirs()
 
             val pangkasBin = File(homeDir, "Golangbin")
             val ffmpegBin = File(homeDir, "ffmpeg")
 
-            // Ekstrak binary
-            copyAssetToFile("bin/pangkas", pangkasBin)
-            copyAssetToFile("bin/ffmpeg", ffmpegBin)
+            // 1. Download Go Engine jika belum terinstal
+            if (!pangkasBin.exists() || pangkasBin.length() == 0L) {
+                broadcastLog("[DOWNLOAD] Downloading Go Engine binary from repo...")
+                if (!downloadFile(GO_BINARY_URL, pangkasBin, "Golangbin")) {
+                    broadcastLog("[CRITICAL ERROR] Gagal mengunduh Go Engine dari repo!")
+                    return
+                }
+            }
+
+            // 2. Download FFmpeg jika belum terinstal
+            if (!ffmpegBin.exists() || ffmpegBin.length() == 0L) {
+                broadcastLog("[DOWNLOAD] Downloading FFmpeg binary from repo...")
+                if (!downloadFile(FFMPEG_BINARY_URL, ffmpegBin, "ffmpeg")) {
+                    broadcastLog("[CRITICAL ERROR] Gagal mengunduh FFmpeg dari repo!")
+                    return
+                }
+            }
 
             broadcastLog("[INIT] Binary path: ${pangkasBin.absolutePath}")
 
-            // Set Permission 755
+            // 3. Set Execution Permission (755)
             pangkasBin.setExecutable(true, false)
             ffmpegBin.setExecutable(true, false)
 
-            val chmodPangkas = Runtime.getRuntime().exec(arrayOf("chmod", "755", pangkasBin.absolutePath))
-            chmodPangkas.waitFor()
+            try {
+                Runtime.getRuntime().exec(arrayOf("chmod", "755", pangkasBin.absolutePath)).waitFor()
+                Runtime.getRuntime().exec(arrayOf("chmod", "755", ffmpegBin.absolutePath)).waitFor()
+            } catch (e: Exception) {
+                broadcastLog("[WARN] Gagal chmod via runtime: ${e.message}")
+            }
 
-            val chmodFFmpeg = Runtime.getRuntime().exec(arrayOf("chmod", "755", ffmpegBin.absolutePath))
-            chmodFFmpeg.waitFor()
-
+            // 4. Execute Native Process
             broadcastLog("[INIT] Menjalankan Golangbin secara native...")
 
             val pb = ProcessBuilder(pangkasBin.absolutePath, "-mode", mode)
@@ -104,11 +124,49 @@ class PangkasService : Service() {
         }
     }
 
-    private fun copyAssetToFile(assetPath: String, outFile: File) {
-        assets.open(assetPath).use { input ->
-            outFile.outputStream().use { output ->
-                input.copyTo(output)
+    private fun downloadFile(urlString: String, outputFile: File, binaryName: String): Boolean {
+        return try {
+            val url = URL(urlString)
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
+            connection.connect()
+
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                broadcastLog("[DOWNLOAD ERROR] Server returned HTTP ${connection.responseCode}")
+                return false
             }
+
+            val fileLength = connection.contentLength
+            val input = connection.inputStream
+            val output = FileOutputStream(outputFile)
+
+            val data = ByteArray(4096)
+            var total: Long = 0
+            var count: Int
+            var lastProgress = -1
+
+            while (input.read(data).also { count = it } != -1) {
+                total += count.toLong()
+                if (fileLength > 0) {
+                    val progress = (total * 100 / fileLength).toInt()
+                    if (progress % 10 == 0 && progress != lastProgress) {
+                        broadcastLog("[DOWNLOAD] $binaryName: $progress%")
+                        lastProgress = progress
+                    }
+                }
+                output.write(data, 0, count)
+            }
+
+            output.flush()
+            output.close()
+            input.close()
+            broadcastLog("[DOWNLOAD SUCCESS] $binaryName berhasil diunduh.")
+            true
+        } catch (e: Exception) {
+            broadcastLog("[DOWNLOAD ERROR] Exception: ${e.localizedMessage}")
+            false
         }
     }
 
