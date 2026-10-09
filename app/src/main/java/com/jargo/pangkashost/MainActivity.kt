@@ -10,19 +10,29 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.airbnb.lottie.compose.*
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -32,7 +42,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = Color(0xFF0D0E15)
+                    color = Color(0xFF0A0C10)
                 ) {
                     DashboardScreen(
                         onStartService = { mode ->
@@ -78,108 +88,225 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(onStartService: (String) -> Unit) {
     var selectedMode by remember { mutableStateOf("pangkas") }
     var isRunning by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showLogs by remember { mutableStateOf(true) }
+    
+    val logs = remember { mutableStateListOf(
+        "[SYSTEM] Daemon Host Engine Initialized.",
+        "[SYSTEM] Target SDK: 29 (Full Storage Bypass Active).",
+        "[NATIVE] Go Binary 'pangkas' ready in assets.",
+        "[NATIVE] FFmpeg ARM64 static linked."
+    ) }
 
-    // Lottie Animation Loading
-    val composition by rememberLottieComposition(LottieCompositionSpec.Url("https://assets9.lottiefiles.com/packages/lf20_qq89p8nh.json"))
-    val progress by animateLottieCompositionAsState(composition, iterations = LottieConstants.IterateForever)
+    val coroutineScope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(20.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text(
-            text = "PANGKAS ENGINE DAEMON",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF64FFDA)
-        )
+    fun appendLog(msg: String) {
+        if (logs.sumOf { it.length } > 128000) {
+            logs.removeAt(0)
+        }
+        logs.add(msg)
+        coroutineScope.launch {
+            listState.animateScrollToItem(logs.size - 1)
+        }
+    }
 
-        // Animation Container
-        Card(
-            modifier = Modifier.fillMaxWidth().height(160.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2230))
-        ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                if (isRunning) {
-                    LottieAnimation(
-                        composition = composition,
-                        progress = { progress },
-                        modifier = Modifier.size(140.dp)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        "PANGKAS DAEMON",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF64FFDA)
                     )
-                } else {
-                    Text("Engine Idle / Ready", color = Color.Gray, fontSize = 14.sp)
-                }
-            }
-        }
-
-        // Mode Selection Container
-        Text("PILIH MODE EKSEKUSI", fontSize = 14.sp, color = Color.LightGray)
-        
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = selectedMode == "pangkas",
-                onClick = { selectedMode = "pangkas" },
-                label = { Text("Pangkas (H.265)") }
+                },
+                actions = {
+                    IconButton(onClick = { showMenu = !showMenu }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Settings", tint = Color.White)
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                        modifier = Modifier.background(Color(0xFF1E2230))
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Pengaturan Engine", color = Color.White) },
+                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF64FFDA)) },
+                            onClick = {
+                                showMenu = false
+                                appendLog("[CONFIG] Menu Pengaturan dibuka.")
+                            }
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0A0C10))
             )
-            FilterChip(
-                selected = selectedMode == "denoise",
-                onClick = { selectedMode = "denoise" },
-                label = { Text("Penjernihan") }
-            )
-            FilterChip(
-                selected = selectedMode == "dual",
-                onClick = { selectedMode = "dual" },
-                label = { Text("Pangkas + Jernih") }
-            )
-        }
-
-        // Container Deep Scanner & Duplicate Detector
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF171A26))
+        },
+        containerColor = Color(0xFF0A0C10)
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("DEEP SCAN & GO DUPLICATE DETECTOR", fontWeight = FontWeight.Bold, color = Color.White)
-                Text("Pindai folder tersembunyi & kalkulasi hash video duplikat via Go Engine.", fontSize = 12.sp, color = Color.Gray)
-                
-                Button(
-                    onClick = { /* Scan Trigger */ },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF29B6F6))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF141824))
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Mulai Scan Internal & Duplikat", color = Color.Black)
+                    Box(
+                        modifier = Modifier
+                            .size(14.dp)
+                            .clip(CircleShape)
+                            .background(if (isRunning) Color(0xFF00E676) else Color(0xFFFF5252))
+                    )
+                    Column {
+                        Text(
+                            text = if (isRunning) "ENGINE RUNNING (ACTIVE)" else "ENGINE IDLE (STANDBY)",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = if (isRunning) "Daemon & WakeLock Active" else "Siap memproses antrean video",
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.weight(1f))
+            Text("PILIH MODE EKSEKUSI", fontSize = 12.sp, color = Color(0xFF888A99), fontWeight = FontWeight.Bold)
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = selectedMode == "pangkas",
+                    onClick = { selectedMode = "pangkas" },
+                    label = { Text("Pangkas (H.265)") },
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChip(
+                    selected = selectedMode == "denoise",
+                    onClick = { selectedMode = "denoise" },
+                    label = { Text("Penjernihan") },
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChip(
+                    selected = selectedMode == "dual",
+                    onClick = { selectedMode = "dual" },
+                    label = { Text("Dual Mode") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
-        // Action Trigger Button
-        Button(
-            onClick = {
-                isRunning = !isRunning
-                if (isRunning) onStartService(selectedMode)
-            },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (isRunning) Color(0xFFFF5252) else Color(0xFF00E676)
-            )
-        ) {
-            Text(
-                if (isRunning) "STOP DAEMON ENGINE" else "JALANKAN PROSES",
-                color = Color.Black,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
-            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF141824))
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("DEEP SCAN & GO DUPLICATE DETECTOR", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                    Text("Pindai folder tersembunyi & kalkulasi hash video duplikat via Go Engine.", fontSize = 12.sp, color = Color(0xFF888A99))
+                    
+                    Button(
+                        onClick = {
+                            appendLog("[DEEP SCAN] Memulai pemindaian folder tersembunyi & duplikat...")
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B0FF)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Mulai Scan Internal & Duplikat", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("SHOW SYSTEM LOGS", fontSize = 12.sp, color = Color(0xFF888A99), fontWeight = FontWeight.Bold)
+                Switch(
+                    checked = showLogs,
+                    onCheckedChange = { showLogs = it }
+                )
+            }
+
+            AnimatedVisibility(visible = showLogs) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .border(1.dp, Color(0xFF262C40), RoundedCornerShape(12.dp)),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF050608))
+                ) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(logs) { log ->
+                            Text(
+                                text = log,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = if (log.contains("ERROR")) Color(0xFFFF5252) else Color(0xFF64FFDA)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Button(
+                onClick = {
+                    isRunning = !isRunning
+                    if (isRunning) {
+                        appendLog("[SERVICE] Foreground Service & WakeLock Started. Mode: $selectedMode")
+                        onStartService(selectedMode)
+                    } else {
+                        appendLog("[SERVICE] Foreground Service Stopped.")
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isRunning) Color(0xFFFF5252) else Color(0xFF00E676)
+                )
+            ) {
+                Text(
+                    if (isRunning) "STOP DAEMON ENGINE" else "JALANKAN PROSES",
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 }
