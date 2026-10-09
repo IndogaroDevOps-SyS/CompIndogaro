@@ -78,17 +78,17 @@ class PangkasService : Service() {
 
             broadcastLog("[INIT] Binary path: ${pangkasBin.absolutePath}")
 
-            // Langsung chmod 777 & setExecutable murni ala Termux
+            // Set Permissions 755
             pangkasBin.setExecutable(true, false)
             pangkasBin.setReadable(true, false)
             pangkasBin.setWritable(true, false)
 
-            val p1 = Runtime.getRuntime().exec(arrayOf("chmod", "777", pangkasBin.absolutePath))
+            val p1 = Runtime.getRuntime().exec(arrayOf("chmod", "755", pangkasBin.absolutePath))
             p1.waitFor()
 
             if (ffmpegBin.exists()) {
                 ffmpegBin.setExecutable(true, false)
-                val p2 = Runtime.getRuntime().exec(arrayOf("chmod", "777", ffmpegBin.absolutePath))
+                val p2 = Runtime.getRuntime().exec(arrayOf("chmod", "755", ffmpegBin.absolutePath))
                 p2.waitFor()
             }
 
