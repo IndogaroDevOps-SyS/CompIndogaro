@@ -53,25 +53,24 @@ class PangkasService : Service() {
 
     private suspend fun executeEngine(mode: String) {
         try {
-            // PAKSA HARDCODE absolute path /data/data/com.jargo.pangkashost/files/home
             val homeDir = File("/data/data/com.jargo.pangkashost/files/home")
             if (!homeDir.exists()) {
                 homeDir.mkdirs()
             }
 
-            val pangkasBin = File(homeDir, "Golangbin")
+            val pangkasBin = File(homeDir, "pangkas")
             val ffmpegBin = File(homeDir, "ffmpeg")
 
             if (!pangkasBin.exists() || pangkasBin.length() == 0L) {
-                broadcastLog("[DOWNLOAD] Downloading Go Engine binary from repo...")
-                if (!downloadFile(GO_BINARY_URL, pangkasBin, "Golangbin")) {
-                    broadcastLog("[CRITICAL ERROR] Gagal mengunduh Go Engine dari repo!")
+                broadcastLog("[DOWNLOAD] Downloading 'pangkas' binary from repo...")
+                if (!downloadFile(GO_BINARY_URL, pangkasBin, "pangkas")) {
+                    broadcastLog("[CRITICAL ERROR] Gagal mengunduh binary 'pangkas' dari repo!")
                     return
                 }
             }
 
             if (!ffmpegBin.exists() || ffmpegBin.length() == 0L) {
-                broadcastLog("[DOWNLOAD] Downloading FFmpeg binary from repo...")
+                broadcastLog("[DOWNLOAD] Downloading 'ffmpeg' binary from repo...")
                 if (!downloadFile(FFMPEG_BINARY_URL, ffmpegBin, "ffmpeg")) {
                     broadcastLog("[WARN] FFmpeg tidak diunduh atau opsional.")
                 }
@@ -79,17 +78,18 @@ class PangkasService : Service() {
 
             broadcastLog("[INIT] Binary path: ${pangkasBin.absolutePath}")
 
-            // CHMOD 755 langsung di /data/data/com.jargo.pangkashost/files/home/
             val p1 = Runtime.getRuntime().exec(arrayOf("chmod", "755", pangkasBin.absolutePath))
             p1.waitFor()
 
-            val p2 = Runtime.getRuntime().exec(arrayOf("chmod", "755", ffmpegBin.absolutePath))
-            p2.waitFor()
+            if (ffmpegBin.exists()) {
+                val p2 = Runtime.getRuntime().exec(arrayOf("chmod", "755", ffmpegBin.absolutePath))
+                p2.waitFor()
+                ffmpegBin.setExecutable(true, false)
+            }
 
             pangkasBin.setExecutable(true, false)
-            ffmpegBin.setExecutable(true, false)
 
-            broadcastLog("[INIT] Menjalankan Golangbin secara native...")
+            broadcastLog("[INIT] Menjalankan binary pangkas secara native...")
 
             val pb = ProcessBuilder(pangkasBin.absolutePath, "-mode", mode)
             pb.directory(homeDir)
@@ -101,7 +101,7 @@ class PangkasService : Service() {
             pb.redirectErrorStream(true)
 
             val process = pb.start()
-            broadcastLog("[SUCCESS] Golangbin daemon aktif & terhubung!")
+            broadcastLog("[SUCCESS] Binary pangkas daemon aktif & terhubung!")
 
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             var line: String?
@@ -160,8 +160,13 @@ class PangkasService : Service() {
             var count: Int
             var lastProgress = -1
 
-            while (input.read(data).also { count = it } != null) {
+            while (true) {
+                count = input.read(data)
+                if (count == -1) break
+                
                 total += count.toLong()
+                output.write(data, 0, count)
+
                 if (fileLength > 0) {
                     val progress = (total * 100 / fileLength).toInt()
                     if (progress % 10 == 0 && progress != lastProgress) {
@@ -169,7 +174,6 @@ class PangkasService : Service() {
                         lastProgress = progress
                     }
                 }
-                output.write(data, 0, count)
             }
 
             output.flush()
