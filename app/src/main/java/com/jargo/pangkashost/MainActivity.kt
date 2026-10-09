@@ -22,6 +22,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
@@ -35,14 +37,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
 
     private val logList = mutableStateListOf(
         "[SYSTEM] Daemon Host Engine Initialized.",
-        "[SYSTEM] Target SDK: 29 (Full Storage Bypass Active).",
-        "[NATIVE] Broadcast Receiver Active."
+        "[SYSTEM] Target SDK: 29 (Full Storage Access Active).",
+        "[NATIVE] Real-time Process Stream Ready."
     )
+
+    var worker1Progress by mutableStateOf(0)
+    var worker1Efficiency by mutableStateOf(0)
+    var worker1File by mutableStateOf("Idle")
+
+    var scanResultJson by mutableStateOf<String?>(null)
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -51,6 +60,23 @@ class MainActivity : ComponentActivity() {
                 logList.removeAt(0)
             }
             logList.add(msg)
+
+            // Parse Stream Stats
+            if (msg.contains("WORKER_1")) {
+                try {
+                    val payload = msg.substringAfter("WORKER_1] ")
+                    val parts = payload.split("|")
+                    for (part in parts) {
+                        if (part.startsWith("PROGRESS:")) worker1Progress = part.substringAfter(":").toInt()
+                        if (part.startsWith("EFFICIENCY:")) worker1Efficiency = part.substringAfter(":").toInt()
+                        if (part.startsWith("FILE:")) worker1File = part.substringAfter(":")
+                    }
+                } catch (e: Exception) { }
+            }
+
+            if (msg.contains("RESULT_JSON")) {
+                scanResultJson = msg.substringAfter("RESULT_JSON] ")
+            }
         }
     }
 
@@ -72,6 +98,11 @@ class MainActivity : ComponentActivity() {
                 ) {
                     DashboardScreen(
                         logs = logList,
+                        worker1Progress = worker1Progress,
+                        worker1Efficiency = worker1Efficiency,
+                        worker1File = worker1File,
+                        scanResultJson = scanResultJson,
+                        onDismissScanDialog = { scanResultJson = null },
                         onStartService = { mode ->
                             if (checkStoragePermission()) {
                                 val intent = Intent(this, PangkasService::class.java).apply {
@@ -122,13 +153,21 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(logs: List<String>, onStartService: (String) -> Unit) {
+fun DashboardScreen(
+    logs: List<String>,
+    worker1Progress: Int,
+    worker1Efficiency: Int,
+    worker1File: String,
+    scanResultJson: String?,
+    onDismissScanDialog: () -> Unit,
+    onStartService: (String) -> Unit
+) {
     var selectedMode by remember { mutableStateOf("pangkas") }
     var isRunning by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showLogBottomSheet by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
-    val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
     LaunchedEffect(logs.size) {
@@ -158,7 +197,7 @@ fun DashboardScreen(logs: List<String>, onStartService: (String) -> Unit) {
                         modifier = Modifier.background(Color(0xFF1E2230))
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Show System Logs", color = Color.White) },
+                            text = { Text("Terminal Log System", color = Color.White) },
                             leadingIcon = { Icon(Icons.Default.List, contentDescription = null, tint = Color(0xFF64FFDA)) },
                             onClick = {
                                 showMenu = false
@@ -168,7 +207,10 @@ fun DashboardScreen(logs: List<String>, onStartService: (String) -> Unit) {
                         DropdownMenuItem(
                             text = { Text("Pengaturan Engine", color = Color.White) },
                             leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF64FFDA)) },
-                            onClick = { showMenu = false }
+                            onClick = {
+                                showMenu = false
+                                showSettingsDialog = true
+                            }
                         )
                     }
                 },
@@ -185,6 +227,7 @@ fun DashboardScreen(logs: List<String>, onStartService: (String) -> Unit) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Dual Worker Gauges dengan Data Progress Real
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -199,18 +242,16 @@ fun DashboardScreen(logs: List<String>, onStartService: (String) -> Unit) {
                 ) {
                     WorkerGauge(
                         workerTitle = "WORKER 1 (COMPRESS)",
-                        progress = if (isRunning) 0.65f else 0.0f,
-                        speedValue = if (isRunning) 48 else 0,
-                        unitLabel = "FPS",
-                        activeFileName = if (isRunning) "VID_20261009_01.mp4" else "Idle"
+                        progressPercent = if (isRunning) worker1Progress else 0,
+                        efficiencyPercent = if (isRunning) worker1Efficiency else 0,
+                        activeFileName = if (isRunning) worker1File else "Idle"
                     )
 
                     WorkerGauge(
                         workerTitle = "WORKER 2 (DENOISE/SCAN)",
-                        progress = if (isRunning) 0.82f else 0.0f,
-                        speedValue = if (isRunning) 120 else 0,
-                        unitLabel = "MB/s",
-                        activeFileName = if (isRunning) "VID_20261009_02.mp4" else "Idle"
+                        progressPercent = 0,
+                        efficiencyPercent = 0,
+                        activeFileName = "Idle"
                     )
                 }
             }
@@ -241,6 +282,7 @@ fun DashboardScreen(logs: List<String>, onStartService: (String) -> Unit) {
                 )
             }
 
+            // Deep Scan Container & Direct Go Scan Trigger
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -248,10 +290,12 @@ fun DashboardScreen(logs: List<String>, onStartService: (String) -> Unit) {
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("DEEP SCAN & GO DUPLICATE DETECTOR", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
-                    Text("Pindai folder tersembunyi & kalkulasi hash video duplikat via Go Engine.", fontSize = 12.sp, color = Color(0xFF888A99))
+                    Text("Pindai folder tersembunyi & kalkulasi SHA-256 hash video duplikat via Go Engine.", fontSize = 12.sp, color = Color(0xFF888A99))
                     
                     Button(
-                        onClick = { },
+                        onClick = {
+                            onStartService("scan")
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B0FF)),
                         shape = RoundedCornerShape(10.dp)
                     ) {
@@ -260,7 +304,7 @@ fun DashboardScreen(logs: List<String>, onStartService: (String) -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.weight(1f))
 
             Button(
                 onClick = {
@@ -288,6 +332,64 @@ fun DashboardScreen(logs: List<String>, onStartService: (String) -> Unit) {
             Spacer(modifier = Modifier.height(16.dp))
         }
 
+        // Pop-up Scan Result Modal
+        if (scanResultJson != null) {
+            val json = try { JSONObject(scanResultJson) } catch (e: Exception) { null }
+            val totalFiles = json?.optInt("total_files") ?: 0
+            val dupCount = json?.optInt("duplicate_count") ?: 0
+            val savedBytes = json?.optLong("saved_bytes") ?: 0L
+            val savedMB = savedBytes / (1024 * 1024)
+
+            AlertDialog(
+                onDismissRequest = onDismissScanDialog,
+                icon = {
+                    Icon(
+                        if (dupCount > 0) Icons.Default.Info else Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = if (dupCount > 0) Color(0xFF00B0FF) else Color(0xFF00E676)
+                    )
+                },
+                title = {
+                    Text(if (dupCount > 0) "Hasil Pemindaian Scan" else "Sistem Bersih (All Clean)")
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Total Video Di-scan: $totalFiles file")
+                        Text("Video Duplikat Ditemukan: $dupCount file")
+                        Text("Potensi Hemat Storage: $savedMB MB")
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = onDismissScanDialog) {
+                        Text("OK", color = Color(0xFF64FFDA))
+                    }
+                },
+                containerColor = Color(0xFF141824)
+            )
+        }
+
+        // Pop-up Pengaturan Engine Modal
+        if (showSettingsDialog) {
+            AlertDialog(
+                onDismissRequest = { showSettingsDialog = false },
+                title = { Text("Pengaturan Engine", color = Color.White) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("CRF Threshold: 28 (H.265 Standard)", color = Color.Gray, fontSize = 12.sp)
+                        Text("Max Threads: 4 Core", color = Color.Gray, fontSize = 12.sp)
+                        Text("Scan Hidden Folder: Aktif", color = Color.Gray, fontSize = 12.sp)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSettingsDialog = false }) {
+                        Text("Simpan", color = Color(0xFF64FFDA))
+                    }
+                },
+                containerColor = Color(0xFF141824)
+            )
+        }
+
+        // Terminal Log Overlay Bottom Sheet
         if (showLogBottomSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showLogBottomSheet = false },
@@ -329,6 +431,7 @@ fun DashboardScreen(logs: List<String>, onStartService: (String) -> Unit) {
                                     color = when {
                                         log.contains("ERROR") || log.contains("CRITICAL") -> Color(0xFFFF5252)
                                         log.contains("SUCCESS") -> Color(0xFF00E676)
+                                        log.contains("DUPLICATE") || log.contains("RESULT_JSON") -> Color(0xFF00B0FF)
                                         else -> Color(0xFF64FFDA)
                                     }
                                 )

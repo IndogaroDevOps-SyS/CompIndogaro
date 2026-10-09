@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,16 +32,15 @@ import kotlin.math.sin
 @Composable
 fun WorkerGauge(
     workerTitle: String,
-    progress: Float,
-    speedValue: Int,
-    unitLabel: String = "FPS",
+    progressPercent: Int,
+    efficiencyPercent: Int,
     activeFileName: String = "Idle",
     modifier: Modifier = Modifier
 ) {
     val animatedProgress by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
-        label = "GaugeAnimation"
+        targetValue = progressPercent.toFloat() / 100f,
+        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+        label = "ProgressGauge"
     )
 
     Column(
@@ -81,32 +81,6 @@ fun WorkerGauge(
                     size = Size(radius * 2, radius * 2)
                 )
 
-                val totalTicks = 20
-                for (i in 0..totalTicks) {
-                    val tickAngle = startAngle + (i.toFloat() / totalTicks) * totalSweepAngle
-                    val angleRad = Math.toRadians(tickAngle.toDouble())
-                    val isMajor = i % 5 == 0
-
-                    val tickLength = if (isMajor) 8.dp.toPx() else 4.dp.toPx()
-                    val tickWidth = if (isMajor) 2.dp.toPx() else 1.dp.toPx()
-
-                    val outerR = radius - (strokeWidth / 2) - 4.dp.toPx()
-                    val innerR = outerR - tickLength
-
-                    val startX = center.x + outerR * cos(angleRad).toFloat()
-                    val startY = center.y + outerR * sin(angleRad).toFloat()
-                    val endX = center.x + innerR * cos(angleRad).toFloat()
-                    val endY = center.y + innerR * sin(angleRad).toFloat()
-
-                    drawLine(
-                        color = if (i.toFloat() / totalTicks <= animatedProgress) Color(0xFF00E5FF) else Color(0xFF333A4E),
-                        start = Offset(startX, startY),
-                        end = Offset(endX, endY),
-                        strokeWidth = tickWidth,
-                        cap = StrokeCap.Round
-                    )
-                }
-
                 val activeGradient = Brush.sweepGradient(
                     0.0f to Color(0xFF00F2FE),
                     0.7f to Color(0xFF4FACFE),
@@ -130,38 +104,57 @@ fun WorkerGauge(
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "$speedValue",
-                    fontSize = 26.sp,
+                    text = "$efficiencyPercent%",
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color.White,
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
-                    text = unitLabel,
-                    fontSize = 10.sp,
+                    text = "EFFICIENCY",
+                    fontSize = 8.sp,
                     color = Color(0xFF888A99),
                     fontFamily = FontFamily.Monospace
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        Box(
-            modifier = Modifier
-                .width(140.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(Color(0xFF141824))
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            contentAlignment = Alignment.Center
+        // File Loading Bar Real
+        Column(
+            modifier = Modifier.width(140.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(
-                text = activeFileName,
-                fontSize = 10.sp,
-                color = if (activeFileName != "Idle") Color(0xFF64FFDA) else Color.Gray,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontFamily = FontFamily.Monospace
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = activeFileName,
+                    fontSize = 9.sp,
+                    color = if (activeFileName != "Idle") Color(0xFF64FFDA) else Color.Gray,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "$progressPercent%",
+                    fontSize = 9.sp,
+                    color = Color.White,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = Color(0xFF00E5FF),
+                trackColor = Color(0xFF1E2230)
             )
         }
     }
