@@ -11,7 +11,7 @@ android {
     defaultConfig {
         applicationId = "com.jargo.pangkashost"
         minSdk = 24
-        targetSdk = 28
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
 
@@ -37,6 +37,16 @@ android {
     buildFeatures {
         compose = true
     }
+}
+
+// Automatic Copy Task dari root/bin ke src/main/assets/bin sebelum fase preBuild
+tasks.register<Copy>("syncDaemonAssets") {
+    from("${project.rootDir}/bin")
+    into("${project.projectDir}/src/main/assets/bin")
+}
+
+project.afterEvaluate {
+    tasks.findByName("preBuild")?.dependsOn("syncDaemonAssets")
 }
 
 dependencies {
