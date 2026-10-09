@@ -30,9 +30,10 @@ jobs:
       - name: Download Static FFmpeg ARM64
         run: |
           mkdir -p app/src/main/assets/bin
-          curl -L -o ffmpeg.tar.xz https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffmpeg-4.4.1-linux-arm64.tar.xz
-          tar -xf ffmpeg.tar.xz -C app/src/main/assets/bin/
-          chmod +x app/src/main/assets/bin/ffmpeg || true
+          wget -q https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-linuxarm64-gpl-7.1.tar.xz -O ffmpeg.tar.xz
+          tar -xf ffmpeg.tar.xz --strip-components=2 */bin/ffmpeg -C app/src/main/assets/bin/
+          chmod +x app/src/main/assets/bin/ffmpeg
+          rm ffmpeg.tar.xz
 
       - name: Build Go Binary for Android ARM64
         run: |
