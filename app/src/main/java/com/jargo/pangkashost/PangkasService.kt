@@ -19,7 +19,6 @@ class PangkasService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
 
-    // Precise URL Repository Owner IndogaroDevOps-SyS
     private val GO_BINARY_URL = "https://github.com/IndogaroDevOps-SyS/CompIndogaro/raw/main/bin/pangkas"
     private val FFMPEG_BINARY_URL = "https://github.com/IndogaroDevOps-SyS/CompIndogaro/raw/main/bin/ffmpeg"
 
@@ -54,8 +53,11 @@ class PangkasService : Service() {
 
     private suspend fun executeEngine(mode: String) {
         try {
-            val homeDir = File(filesDir, "home")
-            if (!homeDir.exists()) homeDir.mkdirs()
+            // PAKSA HARDCODE absolute path /data/data/com.jargo.pangkashost/files/home
+            val homeDir = File("/data/data/com.jargo.pangkashost/files/home")
+            if (!homeDir.exists()) {
+                homeDir.mkdirs()
+            }
 
             val pangkasBin = File(homeDir, "Golangbin")
             val ffmpegBin = File(homeDir, "ffmpeg")
@@ -77,15 +79,15 @@ class PangkasService : Service() {
 
             broadcastLog("[INIT] Binary path: ${pangkasBin.absolutePath}")
 
+            // CHMOD 755 langsung di /data/data/com.jargo.pangkashost/files/home/
+            val p1 = Runtime.getRuntime().exec(arrayOf("chmod", "755", pangkasBin.absolutePath))
+            p1.waitFor()
+
+            val p2 = Runtime.getRuntime().exec(arrayOf("chmod", "755", ffmpegBin.absolutePath))
+            p2.waitFor()
+
             pangkasBin.setExecutable(true, false)
             ffmpegBin.setExecutable(true, false)
-
-            try {
-                Runtime.getRuntime().exec(arrayOf("chmod", "755", pangkasBin.absolutePath)).waitFor()
-                Runtime.getRuntime().exec(arrayOf("chmod", "755", ffmpegBin.absolutePath)).waitFor()
-            } catch (e: Exception) {
-                broadcastLog("[WARN] Gagal chmod via runtime: ${e.message}")
-            }
 
             broadcastLog("[INIT] Menjalankan Golangbin secara native...")
 
@@ -158,7 +160,7 @@ class PangkasService : Service() {
             var count: Int
             var lastProgress = -1
 
-            while (input.read(data).also { count = it } != -1) {
+            while (input.read(data).also { count = it } != null) {
                 total += count.toLong()
                 if (fileLength > 0) {
                     val progress = (total * 100 / fileLength).toInt()
