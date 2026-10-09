@@ -19,9 +19,9 @@ class PangkasService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
 
-    // Direct Remote Repository URL for Binaries
-    private val GO_BINARY_URL = "https://raw.githubusercontent.com/CompIndogaro/CompIndogaro/main/bin/pangkas"
-    private val FFMPEG_BINARY_URL = "https://raw.githubusercontent.com/CompIndogaro/CompIndogaro/main/bin/ffmpeg"
+    // Precise URL Repository Owner IndogaroDevOps-SyS
+    private val GO_BINARY_URL = "https://github.com/IndogaroDevOps-SyS/CompIndogaro/raw/main/bin/pangkas"
+    private val FFMPEG_BINARY_URL = "https://github.com/IndogaroDevOps-SyS/CompIndogaro/raw/main/bin/ffmpeg"
 
     override fun onCreate() {
         super.onCreate()
@@ -60,7 +60,6 @@ class PangkasService : Service() {
             val pangkasBin = File(homeDir, "Golangbin")
             val ffmpegBin = File(homeDir, "ffmpeg")
 
-            // 1. Download Go Engine jika belum terinstal
             if (!pangkasBin.exists() || pangkasBin.length() == 0L) {
                 broadcastLog("[DOWNLOAD] Downloading Go Engine binary from repo...")
                 if (!downloadFile(GO_BINARY_URL, pangkasBin, "Golangbin")) {
@@ -69,18 +68,15 @@ class PangkasService : Service() {
                 }
             }
 
-            // 2. Download FFmpeg jika belum terinstal
             if (!ffmpegBin.exists() || ffmpegBin.length() == 0L) {
                 broadcastLog("[DOWNLOAD] Downloading FFmpeg binary from repo...")
                 if (!downloadFile(FFMPEG_BINARY_URL, ffmpegBin, "ffmpeg")) {
-                    broadcastLog("[CRITICAL ERROR] Gagal mengunduh FFmpeg dari repo!")
-                    return
+                    broadcastLog("[WARN] FFmpeg tidak diunduh atau opsional.")
                 }
             }
 
             broadcastLog("[INIT] Binary path: ${pangkasBin.absolutePath}")
 
-            // 3. Set Execution Permission (755)
             pangkasBin.setExecutable(true, false)
             ffmpegBin.setExecutable(true, false)
 
@@ -91,7 +87,6 @@ class PangkasService : Service() {
                 broadcastLog("[WARN] Gagal chmod via runtime: ${e.message}")
             }
 
-            // 4. Execute Native Process
             broadcastLog("[INIT] Menjalankan Golangbin secara native...")
 
             val pb = ProcessBuilder(pangkasBin.absolutePath, "-mode", mode)
@@ -125,24 +120,40 @@ class PangkasService : Service() {
     }
 
     private fun downloadFile(urlString: String, outputFile: File, binaryName: String): Boolean {
-        return try {
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 15000
-            connection.readTimeout = 15000
-            connection.connect()
+        var currentUrl = urlString
+        var connection: HttpURLConnection? = null
+        try {
+            var redirects = 0
+            while (redirects < 5) {
+                val url = URL(currentUrl)
+                connection = url.openConnection() as HttpURLConnection
+                connection.instanceFollowRedirects = true
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Mobile)")
+                connection.connectTimeout = 20000
+                connection.readTimeout = 20000
+                connection.connect()
 
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                broadcastLog("[DOWNLOAD ERROR] Server returned HTTP ${connection.responseCode}")
-                return false
+                val status = connection.responseCode
+                if (status == HttpURLConnection.HTTP_MOVED_PERM || status == HttpURLConnection.HTTP_MOVED_TEMP || status == 307 || status == 308) {
+                    currentUrl = connection.getHeaderField("Location")
+                    redirects++
+                    connection.disconnect()
+                    continue
+                }
+
+                if (status != HttpURLConnection.HTTP_OK) {
+                    broadcastLog("[DOWNLOAD ERROR] Server returned HTTP $status")
+                    return false
+                }
+                break
             }
 
-            val fileLength = connection.contentLength
+            val fileLength = connection!!.contentLength
             val input = connection.inputStream
             val output = FileOutputStream(outputFile)
 
-            val data = ByteArray(4096)
+            val data = ByteArray(8192)
             var total: Long = 0
             var count: Int
             var lastProgress = -1
@@ -163,10 +174,12 @@ class PangkasService : Service() {
             output.close()
             input.close()
             broadcastLog("[DOWNLOAD SUCCESS] $binaryName berhasil diunduh.")
-            true
+            return true
         } catch (e: Exception) {
             broadcastLog("[DOWNLOAD ERROR] Exception: ${e.localizedMessage}")
-            false
+            return false
+        } finally {
+            connection?.disconnect()
         }
     }
 
