@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -92,7 +93,7 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
     var selectedMode by remember { mutableStateOf("pangkas") }
     var isRunning by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
-    var showLogs by remember { mutableStateOf(true) }
+    var showLogBottomSheet by remember { mutableStateOf(false) }
     
     val logs = remember { mutableStateListOf(
         "[SYSTEM] Daemon Host Engine Initialized.",
@@ -127,13 +128,21 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
                 },
                 actions = {
                     IconButton(onClick = { showMenu = !showMenu }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Settings", tint = Color.White)
+                        Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = Color.White)
                     }
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
                         modifier = Modifier.background(Color(0xFF1E2230))
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Show System Logs", color = Color.White) },
+                            leadingIcon = { Icon(Icons.Default.List, contentDescription = null, tint = Color(0xFF64FFDA)) },
+                            onClick = {
+                                showMenu = false
+                                showLogBottomSheet = true
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Pengaturan Engine", color = Color.White) },
                             leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, tint = Color(0xFF64FFDA)) },
@@ -155,21 +164,37 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Speedometer Gauge Component Container
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
+            // Dual Speedometer Gauge Container (Worker 1 & Worker 2)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF10141E))
             ) {
-                SpeedometerGauge(
-                    progress = if (isRunning) 0.78f else 0.0f,
-                    speedValue = if (isRunning) 60 else 0,
-                    unitLabel = "FPS",
-                    gearLabel = if (isRunning) "TURBO" else "STANDBY"
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    WorkerGauge(
+                        workerTitle = "WORKER 1 (COMPRESS)",
+                        progress = if (isRunning) 0.65f else 0.0f,
+                        speedValue = if (isRunning) 48 else 0,
+                        unitLabel = "FPS",
+                        activeFileName = if (isRunning) "VID_20261009_01.mp4" else "Idle"
+                    )
+
+                    WorkerGauge(
+                        workerTitle = "WORKER 2 (DENOISE/SCAN)",
+                        progress = if (isRunning) 0.82f else 0.0f,
+                        speedValue = if (isRunning) 120 else 0,
+                        unitLabel = "MB/s",
+                        activeFileName = if (isRunning) "VID_20261009_02.mp4" else "Idle"
+                    )
+                }
             }
 
             Text("PILIH MODE EKSEKUSI", fontSize = 12.sp, color = Color(0xFF888A99), fontWeight = FontWeight.Bold)
@@ -219,47 +244,7 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("SHOW SYSTEM LOGS", fontSize = 12.sp, color = Color(0xFF888A99), fontWeight = FontWeight.Bold)
-                Switch(
-                    checked = showLogs,
-                    onCheckedChange = { showLogs = it }
-                )
-            }
-
-            AnimatedVisibility(visible = showLogs) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .border(1.dp, Color(0xFF262C40), RoundedCornerShape(12.dp)),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF050608))
-                ) {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        items(logs) { log ->
-                            Text(
-                                text = log,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                color = if (log.contains("ERROR")) Color(0xFFFF5252) else Color(0xFF64FFDA)
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.weight(1f))
 
             Button(
                 onClick = {
@@ -287,7 +272,56 @@ fun DashboardScreen(onStartService: (String) -> Unit) {
                 )
             }
             
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // System Log Overlay Bottom Sheet
+        if (showLogBottomSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showLogBottomSheet = false },
+                containerColor = Color(0xFF0D0E15)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        "SYSTEM TERMINAL LOGS (64KB - 128KB)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color(0xFF64FFDA),
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(300.dp)
+                            .border(1.dp, Color(0xFF262C40), RoundedCornerShape(12.dp)),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF050608))
+                    ) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(logs) { log ->
+                                Text(
+                                    text = log,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = if (log.contains("ERROR")) Color(0xFFFF5252) else Color(0xFF64FFDA)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
         }
     }
 }
