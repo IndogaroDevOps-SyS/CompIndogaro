@@ -36,8 +36,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.util.regex.Pattern
 
 class MainActivity : ComponentActivity() {
 
@@ -50,28 +52,31 @@ class MainActivity : ComponentActivity() {
     var worker1Progress by mutableStateOf(0)
     var worker1Efficiency by mutableStateOf(0)
     var worker1File by mutableStateOf("Idle")
-
     var scanResultJson by mutableStateOf<String?>(null)
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            val msg = intent?.getStringExtra("LOG_MESSAGE") ?: return
+            val rawMsg = intent?.getStringExtra("LOG_MESSAGE") ?: return
+            val msg = sanitizeAnsi(rawMsg)
+
+            if (msg.isBlank()) return
+
             if (logList.sumOf { it.length } > 128000) {
                 logList.removeAt(0)
             }
             logList.add(msg)
 
-            // Parse Stream Stats
-            if (msg.contains("WORKER_1")) {
+            // Parse Stream Stats untuk Speedometer/Gauge & Log Go
+            if (msg.contains("WORKER_1") || msg.contains("[W1]")) {
                 try {
-                    val payload = msg.substringAfter("WORKER_1] ")
+                    val payload = if (msg.contains("WORKER_1] ")) msg.substringAfter("WORKER_1] ") else msg
                     val parts = payload.split("|")
                     for (part in parts) {
-                        if (part.startsWith("PROGRESS:")) worker1Progress = part.substringAfter(":").toInt()
-                        if (part.startsWith("EFFICIENCY:")) worker1Efficiency = part.substringAfter(":").toInt()
-                        if (part.startsWith("FILE:")) worker1File = part.substringAfter(":")
+                        if (part.startsWith("PROGRESS:")) worker1Progress = part.substringAfter(":").trim().toIntOrNull() ?: worker1Progress
+                        if (part.startsWith("EFFICIENCY:")) worker1Efficiency = part.substringAfter(":").trim().toIntOrNull() ?: worker1Efficiency
+                        if (part.startsWith("FILE:")) worker1File = part.substringAfter(":").trim()
                     }
-                } catch (e: Exception) { }
+                } catch (_: Exception) {}
             }
 
             if (msg.contains("RESULT_JSON")) {
@@ -81,14 +86,16 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+        super.onCreate()
 
         val filter = IntentFilter("com.jargo.pangkashost.LOG_EVENT")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(logReceiver, filter, RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(logReceiver, filter)
-        }
+        // Menggunakan ContextCompat agar kompatibel dari API lama hingga Android 13+ (Tiramisu)
+        ContextCompat.registerReceiver(
+            this,
+            logReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -125,7 +132,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        unregisterReceiver(logReceiver)
+        try {
+            unregisterReceiver(logReceiver)
+        } catch (_: Exception) {}
+    }
+
+    private fun sanitizeAnsi(input: String): String {
+        val ansiRegex = Pattern.compile("\u001B\\[[;\\d]*[A-Za-zKk]")
+        return ansiRegex.matcher(input).replaceAll("").trim()
     }
 
     private fun checkStoragePermission(): Boolean {
@@ -143,7 +157,7 @@ class MainActivity : ComponentActivity() {
                     data = Uri.parse("package:$packageName")
                 }
                 startActivity(intent)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
                 startActivity(intent)
             }
@@ -167,7 +181,6 @@ fun DashboardScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showLogBottomSheet by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
-
     val listState = rememberLazyListState()
 
     LaunchedEffect(logs.size) {
@@ -227,7 +240,6 @@ fun DashboardScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Dual Worker Gauges dengan Data Progress Real
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -246,7 +258,6 @@ fun DashboardScreen(
                         efficiencyPercent = if (isRunning) worker1Efficiency else 0,
                         activeFileName = if (isRunning) worker1File else "Idle"
                     )
-
                     WorkerGauge(
                         workerTitle = "WORKER 2 (DENOISE/SCAN)",
                         progressPercent = 0,
@@ -257,7 +268,6 @@ fun DashboardScreen(
             }
 
             Text("PILIH MODE EKSEKUSI", fontSize = 12.sp, color = Color(0xFF888A99), fontWeight = FontWeight.Bold)
-            
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -282,7 +292,6 @@ fun DashboardScreen(
                 )
             }
 
-            // Deep Scan Container & Direct Go Scan Trigger
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -291,11 +300,8 @@ fun DashboardScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("DEEP SCAN & GO DUPLICATE DETECTOR", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
                     Text("Pindai folder tersembunyi & kalkulasi SHA-256 hash video duplikat via Go Engine.", fontSize = 12.sp, color = Color(0xFF888A99))
-                    
                     Button(
-                        onClick = {
-                            onStartService("scan")
-                        },
+                        onClick = { onStartService("scan") },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00B0FF)),
                         shape = RoundedCornerShape(10.dp)
                     ) {
@@ -328,13 +334,12 @@ fun DashboardScreen(
                     fontSize = 15.sp
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Pop-up Scan Result Modal
         if (scanResultJson != null) {
-            val json = try { JSONObject(scanResultJson) } catch (e: Exception) { null }
+            val json = try { JSONObject(scanResultJson) } catch (_: Exception) { null }
             val totalFiles = json?.optInt("total_files") ?: 0
             val dupCount = json?.optInt("duplicate_count") ?: 0
             val savedBytes = json?.optLong("saved_bytes") ?: 0L
@@ -368,7 +373,6 @@ fun DashboardScreen(
             )
         }
 
-        // Pop-up Pengaturan Engine Modal
         if (showSettingsDialog) {
             AlertDialog(
                 onDismissRequest = { showSettingsDialog = false },
@@ -389,7 +393,6 @@ fun DashboardScreen(
             )
         }
 
-        // Terminal Log Overlay Bottom Sheet
         if (showLogBottomSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showLogBottomSheet = false },
@@ -442,5 +445,32 @@ fun DashboardScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun WorkerGauge(
+    workerTitle: String,
+    progressPercent: Int,
+    efficiencyPercent: Int,
+    activeFileName: String
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(workerTitle, fontSize = 10.sp, color = Color(0xFF888A99), fontWeight = FontWeight.Bold)
+        Box(contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(
+                progress = { progressPercent / 100f },
+                modifier = Modifier.size(64.dp),
+                color = Color(0xFF64FFDA),
+                trackColor = Color(0xFF1E2230),
+                strokeWidth = 6.dp
+            )
+            Text("$progressPercent%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+        Text("Efficiency: $efficiencyPercent%", fontSize = 10.sp, color = Color(0xFF64FFDA))
+        Text(activeFileName, fontSize = 9.sp, color = Color(0xFF888A99), maxLines = 1)
     }
 }
