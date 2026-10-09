@@ -20,7 +20,7 @@ class PangkasService : Service() {
         super.onCreate()
         val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PangkasHost::DaemonLock")
-        wakeLock?.acquire(10 * 60 * 1000L) // 10 min lock
+        wakeLock?.acquire(10 * 60 * 1000L)
         
         broadcastLog("[SERVICE] Foreground Service & WakeLock Initialized.")
     }
@@ -47,23 +47,26 @@ class PangkasService : Service() {
 
     private fun executeEngine(mode: String) {
         try {
-            broadcastLog("[NATIVE] Extracting binaries from assets...")
-            val binDir = File(filesDir, "bin")
+            broadcastLog("[NATIVE] Extracting binaries to executable directory (codeCacheDir)...")
+            
+            // Gunakan codeCacheDir agar lolos dari aturan SELinux noexec
+            val binDir = File(codeCacheDir, "bin")
             if (!binDir.exists()) binDir.mkdirs()
 
             val pangkasBin = File(binDir, "pangkas")
             val ffmpegBin = File(binDir, "ffmpeg")
 
-            if (!pangkasBin.exists()) copyAssetToFile("bin/pangkas", pangkasBin)
-            if (!ffmpegBin.exists()) copyAssetToFile("bin/ffmpeg", ffmpegBin)
+            copyAssetToFile("bin/pangkas", pangkasBin)
+            copyAssetToFile("bin/ffmpeg", ffmpegBin)
 
-            pangkasBin.setExecutable(true)
-            ffmpegBin.setExecutable(true)
+            // Force Permission 755 via POSIX Runtime Call
+            Runtime.getRuntime().exec("chmod 755 ${pangkasBin.absolutePath}").waitFor()
+            Runtime.getRuntime().exec("chmod 755 ${ffmpegBin.absolutePath}").waitFor()
 
-            broadcastLog("[NATIVE] Binaries ready. Launching ProcessBuilder...")
+            broadcastLog("[NATIVE] Binary execution permission granted (755). Executing ProcessBuilder...")
             
             val pb = ProcessBuilder(pangkasBin.absolutePath, "-mode", mode)
-            pb.directory(filesDir)
+            pb.directory(codeCacheDir)
             pb.redirectErrorStream(true)
 
             val process = pb.start()
@@ -76,7 +79,7 @@ class PangkasService : Service() {
 
             val exitCode = process.waitFor()
             if (exitCode == 0) {
-                broadcastLog("[SUCCESS] Engine finished process successfully.")
+                broadcastLog("[SUCCESS] Engine process finished successfully.")
             } else {
                 broadcastLog("[ERROR] Engine exited with code: $exitCode")
             }
