@@ -6,26 +6,27 @@ import java.io.*
 
 class DaemonManager(private val context: Context) {
 
-    // Gunakan codeCacheDir agar aman dari restriksi SELinux noexec
     private val workDir: File = context.filesDir
-    private val execDir: File = context.codeCacheDir
 
     fun prepareEnvironment() {
-        Log.i(TAG, "Mengekstrak aset biner ke: ${execDir.absolutePath}")
-        copyAssetFolder("bin", execDir)
-        makeBinariesExecutable(execDir)
+        Log.i(TAG, "Mengekstrak aset ke: ${workDir.absolutePath}")
+        copyAssetFolder("", workDir)
+        makeBinariesExecutable(File(workDir, "bin"))
     }
 
     private fun copyAssetFolder(fromAssetPath: String, toDir: File) {
         val files = context.assets.list(fromAssetPath) ?: return
-        if (!toDir.exists()) toDir.mkdirs()
+        if (!toDir.exists()) {
+            toDir.mkdirs()
+        }
 
         for (file in files) {
+            if (file == "images" || file == "webkit" || file == "sounds") continue
             val assetSubPath = if (fromAssetPath.isEmpty()) file else "$fromAssetPath/$file"
             val subFiles = context.assets.list(assetSubPath)
             val destFile = File(toDir, file)
 
-            if (!subFiles.isNullOrEmpty()) {
+            if (subFiles != null && subFiles.isNotEmpty()) {
                 copyAssetFolder(assetSubPath, destFile)
             } else {
                 copyAssetFile(assetSubPath, destFile)
@@ -38,7 +39,7 @@ class DaemonManager(private val context: Context) {
             FileOutputStream(destFile).use { output ->
                 val buffer = ByteArray(8192)
                 var read: Int
-                while (input.read(buffer).also { read = it } != null) {
+                while (input.read(buffer).also { read = it } != -1) {
                     output.write(buffer, 0, read)
                 }
                 output.flush()
@@ -46,48 +47,42 @@ class DaemonManager(private val context: Context) {
         }
     }
 
-    private fun makeBinariesExecutable(targetDir: File) {
-        if (targetDir.exists() && targetDir.isDirectory) {
-            targetDir.listFiles()?.forEach { bin ->
+    private fun makeBinariesExecutable(binDir: File) {
+        if (binDir.exists() && binDir.isDirectory) {
+            binDir.listFiles()?.forEach { bin ->
                 val success = bin.setExecutable(true, false)
-                try {
-                    Runtime.getRuntime().exec("chmod 755 ${bin.absolutePath}").waitFor()
-                    Log.i(TAG, "Chmod 755 dipaksa untuk: ${bin.name}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Gagal chmod: ${bin.name}", e)
+                if (!success) {
+                    try {
+                        Runtime.getRuntime().exec("chmod 755 ${bin.absolutePath}").waitFor()
+                        Log.i(TAG, "Chmod 755 via shell: ${bin.name}")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Gagal chmod file: ${bin.name}", e)
+                    }
+                } else {
+                    Log.i(TAG, "Set executable (Java API): ${bin.name}")
                 }
             }
         }
     }
 
     fun startDaemon(binaryName: String, onLog: (String) -> Unit, vararg args: String): Process {
-        val binaryFile = File(execDir, binaryName)
+        val binaryFile = File(workDir, "bin/$binaryName")
         if (!binaryFile.exists()) {
             throw IOException("File biner tidak ditemukan: ${binaryFile.absolutePath}")
         }
 
-        // Paksa chmod 755 tepat sebelum eksekusi
-        try {
-            Runtime.getRuntime().exec("chmod 755 ${binaryFile.absolutePath}").waitFor()
-        } catch (_: Exception) {}
-
-        val commandList = mutableListOf<String>()
-        commandList.add(binaryFile.absolutePath)
-        commandList.addAll(args)
-
-        val pb = ProcessBuilder(commandList)
+        val pb = ProcessBuilder()
+        pb.command().add(binaryFile.absolutePath)
+        args.forEach { pb.command().add(it) }
         pb.directory(workDir)
-
-        val env = pb.environment()
-        env["PATH"] = "${execDir.absolutePath}:/system/bin:" + (env["PATH"] ?: "")
-        env["HOME"] = workDir.absolutePath
 
         val envFile = File(workDir, ".env")
         if (envFile.exists()) {
-            env.putAll(parseEnvFile(envFile))
+            val envMap = parseEnvFile(envFile)
+            pb.environment().putAll(envMap)
         }
 
-        Log.i(TAG, "Mengeksekusi daemon: ${binaryFile.absolutePath}")
+        Log.i(TAG, "Mengeksekusi daemon biner: ${binaryFile.absolutePath}")
         val process = pb.start()
 
         drainStream(process.inputStream, "STDOUT", onLog)
