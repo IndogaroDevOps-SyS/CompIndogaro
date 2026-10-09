@@ -2,87 +2,49 @@ package com.jargo.pangkashost
 
 import android.content.Context
 import android.util.Log
-import java.io.*
+import java.io.BufferedReader
+import java.io.File
+import java.io.FileInputStream
+import java.io.IOException
+import java.io.InputStream
+import java.io.InputStreamReader
 
 class DaemonManager(private val context: Context) {
 
     private val workDir: File = context.filesDir
+    // Mengambil direktori resmi native library yang diizinkan SELinux untuk eksekusi
+    private val nativeLibDir: String = context.applicationInfo.nativeLibraryDir
 
     fun prepareEnvironment() {
-        Log.i(TAG, "Mengekstrak aset ke: ${workDir.absolutePath}")
-        copyAssetFolder("", workDir)
-        makeBinariesExecutable(File(workDir, "bin"))
-    }
-
-    private fun copyAssetFolder(fromAssetPath: String, toDir: File) {
-        val files = context.assets.list(fromAssetPath) ?: return
-        if (!toDir.exists()) {
-            toDir.mkdirs()
-        }
-
-        for (file in files) {
-            if (file == "images" || file == "webkit" || file == "sounds") continue
-            val assetSubPath = if (fromAssetPath.isEmpty()) file else "$fromAssetPath/$file"
-            val subFiles = context.assets.list(assetSubPath)
-            val destFile = File(toDir, file)
-
-            if (subFiles != null && subFiles.isNotEmpty()) {
-                copyAssetFolder(assetSubPath, destFile)
-            } else {
-                copyAssetFile(assetSubPath, destFile)
-            }
-        }
-    }
-
-    private fun copyAssetFile(assetPath: String, destFile: File) {
-        context.assets.open(assetPath).use { input ->
-            FileOutputStream(destFile).use { output ->
-                val buffer = ByteArray(8192)
-                var read: Int
-                while (input.read(buffer).also { read = it } != -1) {
-                    output.write(buffer, 0, read)
-                }
-                output.flush()
-            }
-        }
-    }
-
-    private fun makeBinariesExecutable(binDir: File) {
-        if (binDir.exists() && binDir.isDirectory) {
-            binDir.listFiles()?.forEach { bin ->
-                val success = bin.setExecutable(true, false)
-                if (!success) {
-                    try {
-                        Runtime.getRuntime().exec("chmod 755 ${bin.absolutePath}").waitFor()
-                        Log.i(TAG, "Chmod 755 via shell: ${bin.name}")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Gagal chmod file: ${bin.name}", e)
-                    }
-                } else {
-                    Log.i(TAG, "Set executable (Java API): ${bin.name}")
-                }
-            }
-        }
+        Log.i(TAG, "Native library directory: $nativeLibDir")
     }
 
     fun startDaemon(binaryName: String, onLog: (String) -> Unit, vararg args: String): Process {
-        val binaryFile = File(workDir, "bin/$binaryName")
+        // Jika dipanggil "pangkas", ubah menjadi "libpangkas.so"
+        val realBinaryName = if (!binaryName.startsWith("lib")) "lib$binaryName.so" else binaryName
+        val binaryFile = File(nativeLibDir, realBinaryName)
+
         if (!binaryFile.exists()) {
-            throw IOException("File biner tidak ditemukan: ${binaryFile.absolutePath}")
+            throw IOException("File biner native tidak ditemukan: ${binaryFile.absolutePath}")
         }
 
-        val pb = ProcessBuilder()
-        pb.command().add(binaryFile.absolutePath)
-        args.forEach { pb.command().add(it) }
+        val commandList = mutableListOf<String>()
+        commandList.add(binaryFile.absolutePath)
+        commandList.addAll(args)
+
+        val pb = ProcessBuilder(commandList)
         pb.directory(workDir)
+
+        val env = pb.environment()
+        env["PATH"] = "$nativeLibDir:/system/bin:" + (env["PATH"] ?: "")
+        env["HOME"] = workDir.absolutePath
 
         val envFile = File(workDir, ".env")
         if (envFile.exists()) {
-            val envMap = parseEnvFile(envFile)
-            pb.environment().putAll(envMap)
+            env.putAll(parseEnvFile(envFile))
         }
 
-        Log.i(TAG, "Mengeksekusi daemon biner: ${binaryFile.absolutePath}")
+        Log.i(TAG, "Mengeksekusi native daemon: ${binaryFile.absolutePath}")
         val process = pb.start()
 
         drainStream(process.inputStream, "STDOUT", onLog)
