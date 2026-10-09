@@ -6,12 +6,14 @@ import java.io.*
 
 class DaemonManager(private val context: Context) {
 
+    // Gunakan codeCacheDir agar aman dari restriksi SELinux noexec
     private val workDir: File = context.filesDir
+    private val execDir: File = context.codeCacheDir
 
     fun prepareEnvironment() {
-        Log.i(TAG, "Mengekstrak aset biner ke: ${workDir.absolutePath}")
-        copyAssetFolder("", workDir)
-        makeBinariesExecutable(File(workDir, "bin"))
+        Log.i(TAG, "Mengekstrak aset biner ke: ${execDir.absolutePath}")
+        copyAssetFolder("bin", execDir)
+        makeBinariesExecutable(execDir)
     }
 
     private fun copyAssetFolder(fromAssetPath: String, toDir: File) {
@@ -19,7 +21,6 @@ class DaemonManager(private val context: Context) {
         if (!toDir.exists()) toDir.mkdirs()
 
         for (file in files) {
-            if (file == "images" || file == "webkit" || file == "sounds") continue
             val assetSubPath = if (fromAssetPath.isEmpty()) file else "$fromAssetPath/$file"
             val subFiles = context.assets.list(assetSubPath)
             val destFile = File(toDir, file)
@@ -35,46 +36,58 @@ class DaemonManager(private val context: Context) {
     private fun copyAssetFile(assetPath: String, destFile: File) {
         context.assets.open(assetPath).use { input ->
             FileOutputStream(destFile).use { output ->
-                input.copyTo(output)
+                val buffer = ByteArray(8192)
+                var read: Int
+                while (input.read(buffer).also { read = it } != null) {
+                    output.write(buffer, 0, read)
+                }
+                output.flush()
             }
         }
     }
 
-    private fun makeBinariesExecutable(binDir: File) {
-        if (binDir.exists() && binDir.isDirectory) {
-            binDir.listFiles()?.forEach { bin ->
-                if (!bin.setExecutable(true, false)) {
-                    try {
-                        Runtime.getRuntime().exec("chmod 755 ${bin.absolutePath}").waitFor()
-                        Log.i(TAG, "Chmod 755 via shell: ${bin.name}")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Gagal chmod file: ${bin.name}", e)
-                    }
-                } else {
-                    Log.i(TAG, "Set executable (Java API): ${bin.name}")
+    private fun makeBinariesExecutable(targetDir: File) {
+        if (targetDir.exists() && targetDir.isDirectory) {
+            targetDir.listFiles()?.forEach { bin ->
+                val success = bin.setExecutable(true, false)
+                try {
+                    Runtime.getRuntime().exec("chmod 755 ${bin.absolutePath}").waitFor()
+                    Log.i(TAG, "Chmod 755 dipaksa untuk: ${bin.name}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Gagal chmod: ${bin.name}", e)
                 }
             }
         }
     }
 
     fun startDaemon(binaryName: String, onLog: (String) -> Unit, vararg args: String): Process {
-        val binaryFile = File(workDir, "bin/$binaryName")
+        val binaryFile = File(execDir, binaryName)
         if (!binaryFile.exists()) {
             throw IOException("File biner tidak ditemukan: ${binaryFile.absolutePath}")
         }
 
-        val pb = ProcessBuilder()
-        pb.command().add(binaryFile.absolutePath)
-        args.forEach { pb.command().add(it) }
+        // Paksa chmod 755 tepat sebelum eksekusi
+        try {
+            Runtime.getRuntime().exec("chmod 755 ${binaryFile.absolutePath}").waitFor()
+        } catch (_: Exception) {}
+
+        val commandList = mutableListOf<String>()
+        commandList.add(binaryFile.absolutePath)
+        commandList.addAll(args)
+
+        val pb = ProcessBuilder(commandList)
         pb.directory(workDir)
+
+        val env = pb.environment()
+        env["PATH"] = "${execDir.absolutePath}:/system/bin:" + (env["PATH"] ?: "")
+        env["HOME"] = workDir.absolutePath
 
         val envFile = File(workDir, ".env")
         if (envFile.exists()) {
-            pb.environment().putAll(parseEnvFile(envFile))
-            Log.i(TAG, "Injeksi .env berhasil.")
+            env.putAll(parseEnvFile(envFile))
         }
 
-        Log.i(TAG, "Mengeksekusi daemon biner: ${binaryFile.absolutePath}")
+        Log.i(TAG, "Mengeksekusi daemon: ${binaryFile.absolutePath}")
         val process = pb.start()
 
         drainStream(process.inputStream, "STDOUT", onLog)
@@ -85,9 +98,11 @@ class DaemonManager(private val context: Context) {
     private fun parseEnvFile(envFile: File): Map<String, String> {
         val envMap = mutableMapOf<String, String>()
         try {
-            envFile.forEachLine { line ->
-                val trimmed = line.trim()
-                if (trimmed.isNotEmpty() && !trimmed.startsWith("#")) {
+            BufferedReader(InputStreamReader(FileInputStream(envFile))).use { reader ->
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    val trimmed = line?.trim() ?: continue
+                    if (trimmed.isEmpty() || trimmed.startsWith("#")) continue
                     val parts = trimmed.split("=", limit = 2)
                     if (parts.size == 2) {
                         envMap[parts[0].trim()] = parts[1].trim()
