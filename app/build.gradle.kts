@@ -39,7 +39,7 @@ android {
     }
 }
 
-// Automatic Copy Task dari root/bin ke src/main/assets/bin sebelum fase preBuild
+// Sync Biner dari root folder /bin ke Android Assets
 tasks.register<Copy>("syncDaemonAssets") {
     from("${project.rootDir}/bin")
     into("${project.projectDir}/src/main/assets/bin")
@@ -50,6 +50,8 @@ project.afterEvaluate {
 }
 
 dependencies {
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("com.google.android.material:material:1.11.0")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
