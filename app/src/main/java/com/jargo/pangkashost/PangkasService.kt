@@ -78,16 +78,19 @@ class PangkasService : Service() {
 
             broadcastLog("[INIT] Binary path: ${pangkasBin.absolutePath}")
 
-            val p1 = Runtime.getRuntime().exec(arrayOf("chmod", "755", pangkasBin.absolutePath))
+            // Langsung chmod 777 & setExecutable murni ala Termux
+            pangkasBin.setExecutable(true, false)
+            pangkasBin.setReadable(true, false)
+            pangkasBin.setWritable(true, false)
+
+            val p1 = Runtime.getRuntime().exec(arrayOf("chmod", "777", pangkasBin.absolutePath))
             p1.waitFor()
 
             if (ffmpegBin.exists()) {
-                val p2 = Runtime.getRuntime().exec(arrayOf("chmod", "755", ffmpegBin.absolutePath))
-                p2.waitFor()
                 ffmpegBin.setExecutable(true, false)
+                val p2 = Runtime.getRuntime().exec(arrayOf("chmod", "777", ffmpegBin.absolutePath))
+                p2.waitFor()
             }
-
-            pangkasBin.setExecutable(true, false)
 
             broadcastLog("[INIT] Menjalankan binary pangkas secara native...")
 
@@ -95,7 +98,7 @@ class PangkasService : Service() {
             pb.directory(homeDir)
 
             val env = pb.environment()
-            env["PATH"] = "${homeDir.absolutePath}:" + (env["PATH"] ?: "")
+            env["PATH"] = "${homeDir.absolutePath}:/system/bin:" + (env["PATH"] ?: "")
             env["HOME"] = homeDir.absolutePath
 
             pb.redirectErrorStream(true)
