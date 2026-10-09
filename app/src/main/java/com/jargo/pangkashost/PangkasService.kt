@@ -25,6 +25,7 @@ class PangkasService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val mode = intent?.getStringExtra("MODE") ?: "pangkas"
+        val filePath = intent?.getStringExtra("FILE_PATH") ?: ""
         createNotificationChannel()
 
         val notification: Notification = NotificationCompat.Builder(this, "PangkasDaemonChannel")
@@ -37,22 +38,38 @@ class PangkasService : Service() {
         startForeground(101, notification)
 
         serviceScope.launch(Dispatchers.IO) {
-            runDaemonSupervisor(mode)
+            runDaemonSupervisor(mode, filePath)
         }
 
         return START_STICKY
     }
 
-    private fun runDaemonSupervisor(mode: String) {
+    private fun runDaemonSupervisor(mode: String, filePath: String) {
         try {
             val manager = DaemonManager(this)
             manager.prepareEnvironment()
-            broadcastLog("[INIT] Assets biner berhasil diekstrak ke internal storage.")
 
-            broadcastLog("[INIT] Mengeksekusi daemon 'pangkas' secara native...")
+            val argsList = mutableListOf<String>()
+
+            when (mode) {
+                "penjernihan" -> {
+                    argsList.add("-d")
+                    if (filePath.isNotEmpty()) argsList.add(filePath)
+                }
+                "direct" -> {
+                    if (filePath.isNotEmpty()) argsList.add(filePath)
+                }
+                else -> {
+                    // Default Watch Mode / Daemon Global (-O)
+                    argsList.add("-O")
+                }
+            }
+
+            broadcastLog("[INIT] Mengeksekusi daemon 'pangkas' dengan argumen: ${argsList.joinToString(" ")}...")
+            
             daemonProcess = manager.startDaemon("pangkas", { log ->
                 broadcastLog("[GO-DAEMON] $log")
-            }, "-mode", mode)
+            }, *argsList.toTypedArray())
 
             val exitCode = daemonProcess?.waitFor() ?: -1
             if (exitCode == 0) {
